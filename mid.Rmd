@@ -1,0 +1,347 @@
+---
+title: "Midterm project"
+author: "Congyao Duan"
+date: "2020/11/13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+pacman::p_load("knitr","tidyverse","glmnet","car","tidyverse","ggplot2","arm","rstanarm", "magrittr","drat","dplyr","gridExtra","viridis","lubridate","zoo","forecast","caret")
+```
+
+
+# 1.Abstract
+Economic freedom is vital to a country's consumption ability,so I think the report can help companies to decide which country's market is more valuable to exploit. I use linear regression model,multilevel regression model and time series model to analyze the changes of economic freedom and the factors that affect economic freedom in this report.
+
+# 2.Instruction
+
+The project I plan to do is about economic freedom.What I ‘m going to do is Analyzing the factors that affect the economic freedom& Analyzing the changing trend and predict the economic freedom index for different countries in the future.
+
+I did some research about economic freedom and economic development of one country.I found out that the factors that affact economic development and economic freedom in a country are economic development, higher education, natural factors and people's income.So I collected these datasets to analyze their impact on economic freedom
+
+# 3.Data Cleaning and Praparing
+
+## 3.1 Data source
+1.	https://www.fraserinstitute.org/economic-freedom/dataset?geozone=world&page=dataset&min-year=2&max-year=0&filter=1&year=2017
+This web page provides the information about the economic freedom in different countries from 1970-2018. It also provide the size of government, legal system& property rights, sound money, freedom to trade internationally, regulation(the factors that affect the economic freedom).
+2.	https://github.com/datasets/gdp/blob/master/data/gdp.csv
+GDP for different countries in different years
+3.	https://github.com/datasets/population/blob/master/data/population.csv
+Population for different countries in different years
+4.	https://github.com/datasets/cpi/blob/master/data/cpi.csv
+Customer price index for different countries in different years
+5.	https://github.com/datasets/expenditure-on-research-and-development
+Higher education and research funding
+
+```{r}
+setwd("C:/Users/zzdcy/Desktop/MSSP/678/midterm project")
+eco<-read.csv("eco.csv",header=TRUE)
+gdp<-read.csv("gdp.csv",header = TRUE)
+popu<-read.csv("population.csv",header=TRUE)
+cpi<-read.csv("cpi.csv",header = TRUE)
+b_research<-read.csv("basic_research.csv",header=TRUE)
+h_education<-read.csv("higher_education.csv",header=TRUE)
+```
+
+## 3.2 Data cleaning and orgnizing
+In this part, I made two data sets.I add the data I need to the dataset ,filter the required columns separately, remove the unneeded data, and remove the NA.(dataset eco is to analysis the Index of economic freedom in different years and dataset eco2 is to analysis the factors that can affect economic freedom)
+
+```{r}
+eco%<>%dplyr::select(c(Year,ISO_Code,Countries,Economic.Freedom.Summary.Index,Rank,Quartile,Size.of.Government,Legal.System...Property.Rights,Sound.Money,Freedom.to.Trade.Internationally,Regulation))
+
+eco2<-eco%>%dplyr::select(c(Year,Countries,Economic.Freedom.Summary.Index,Rank))
+```
+
+
+```{r}
+#add the data we need to the dataset 
+gdp<-gdp[,-2]
+gdp<-gdp%>%rename(Countries=Country.Name,gdp=Value)
+eco<- left_join(gdp, eco,by = c("Year", "Countries"))
+
+popu<-popu[,-2]
+popu<-popu%>%rename(Countries=Country.Name,population=Value)
+eco<- left_join(popu, eco,by = c("Year", "Countries"))
+
+cpi<-cpi[,-2]
+cpi<-cpi%>%rename(Countries=Country.Name)
+eco<- left_join(cpi, eco,by = c("Year", "Countries"))
+
+b_research<-b_research[,-1]
+b_research<-b_research%>%rename(Countries=Country,Year=TIME)
+eco<- left_join(b_research, eco,by = c("Year", "Countries"))
+
+h_education<-h_education[,-1]
+h_education<-h_education%>%rename(Countries=Country,Year=TIME)
+eco<- left_join(h_education, eco,by = c("Year", "Countries"))
+
+##Calculate per capita GDP
+eco$gdp<-(eco$gdp)/(eco$population)
+
+#since the data before 2000 are very incomplete，so I choose the data after 2000 for the study
+eco<-subset(eco,Year>2000)
+eco<-na.omit(eco)
+eco2<-na.omit(eco2)
+```
+
+# 4 EDA
+
+##  4.1 Index of economic freedom in different years
+
+To study trends in economic freedom, I drew boxplots and line charts (too many country lines are too confusing, so I divided them into four plots to draw all the countries,one of the four plots is shown in the report). Then I selected two countries with a large gap and I was more interested in to make separate line charts.
+From the EDA part,I find out that economic freedom in the world as a whole is on the rise, but the index of economic freedom in individual countries is not always on the rise.
+
+```{r}
+#Draw boxplots of the year and economic freedom
+g1<-ggplot(data=eco,aes(x=factor(Year),y=Economic.Freedom.Summary.Index))
+p1<-g1+geom_boxplot()
+
+#There are too many countries, so I'm going to draw line charts in groups
+class1<-subset(eco,Quartile=="1")
+p2<-ggplot(class1, aes(x=factor(Year), y=Economic.Freedom.Summary.Index, colour=Countries,group=Countries)) + geom_line(size=.1)
+
+class2<-subset(eco,Quartile=="2")
+p3<-ggplot(class1, aes(x=factor(Year), y=Economic.Freedom.Summary.Index, colour=Countries,group=Countries)) + geom_line(size=.1)
+
+class3<-subset(eco,Quartile=="3")
+p4<-ggplot(class1, aes(x=factor(Year), y=Economic.Freedom.Summary.Index, colour=Countries,group=Countries)) + geom_line(size=.1)
+
+class4<-subset(eco,Quartile=="4")
+p5<-ggplot(class1, aes(x=factor(Year), y=Economic.Freedom.Summary.Index, colour=Countries,group=Countries)) + geom_line(size=.1)
+
+Ita<-subset(eco2,Countries=="Italy")
+p6<-ggplot(Ita, aes(x=factor(Year), y=Economic.Freedom.Summary.Index, colour=Countries,group=Countries)) + geom_line(size=.1)
+
+alg<-subset(eco2,Countries=="Algeria")
+p7<-ggplot(alg, aes(x=factor(Year), y=Economic.Freedom.Summary.Index, colour=Countries,group=Countries)) + geom_line(size=.1)
+
+grid.arrange(p1,p3,p6,p7,ncol=2)
+```
+
+## 4.2 Factors that can affect economic freedom
+
+I drew a scatter plot of economic freedom and the different factors that influence it. It can be seen that these factors have a certain impact on economic freedom.
+
+```{r}
+#find the relationship between population/GDP/CPI with the economic freedom
+#CPI
+h1<-ggplot(data=eco,aes(x=CPI,y=Economic.Freedom.Summary.Index))
+p1<-h1+geom_point()
+
+#GDP per capita
+h2<-ggplot(data=eco,aes(x=gdp,y=Economic.Freedom.Summary.Index))
+p2<-h2+geom_point()
+
+#population
+h3<-ggplot(data=eco,aes(x=population,y=Economic.Freedom.Summary.Index))
+p3<-h3+geom_point()
+
+#basic research
+h4<-ggplot(data=eco,aes(x=Basic.research,y=Economic.Freedom.Summary.Index))
+p4<-h4+geom_point()
+
+#higher education
+h5<-ggplot(data=eco,aes(x=Higher.Education,y=Economic.Freedom.Summary.Index))
+p5<-h5+geom_point()
+
+grid.arrange(p1,p2,p3,p4,p5,ncol=3)
+
+```
+
+# 5 Models and Interpretation&Validation
+
+## 5.1 Index of economic freedom in different years
+I start with the linear regression.But linear models are not necessarily appropriate. The model fitted with the economic free values of all countries must have a large error in the prediction.Then I select 12 countries to fit multilevel model.
+
+I also did some research on how people deal with this kind of problem.I found out that time series model may be a good choice,so I read a book and some of articles about time series and also try this model on individual country.I chose one of the higher-ranked countries and one of the lower-ranked countries to fit the model.
+
+(Time-series model: time series is a series of data points indexed (or listed or graphed) in time order. Most commonly, a time series is a sequence taken at successive equally spaced points in time. Thus it is a sequence of discrete-time data. Time Series analysis can be useful to see how a given asset, security or economic variable changes over time.)
+
+I fit the time series model in this order:Verify that if the dataset is a stationary white noise sequence,calculate ACF/PACF,ARIMA model recognition,model check,prediction.
+
+### 1 Fit models
+
+```{r}
+#linear regression model
+fit2<-lm(Economic.Freedom.Summary.Index~factor(Year),data=eco2)
+
+
+#multilevel model
+eco3<-subset(eco2,Countries=="Italy"|Countries=="Japan"|Countries=="Australia"|Countries=="Brazil"|Countries=="Canada"|Countries=="Colombia"|Countries=="France"|Countries=="Greece"|Countries=="India"|Countries=="Iceland"|Countries=="Norway"|Countries=="Sweden")
+
+fit5<-lmer(Economic.Freedom.Summary.Index~Year+(1|Countries),data=eco3)
+ctable <- coef(summary(fit5))
+p <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+ctable <- cbind(ctable, "p value" = p)
+
+```
+
+By fitting the linear model, I can see that the world as a whole has an exponential increase in economic freedom over time(after 1995).But I don't think it's a good model for predicting economic freedom in different countries.So I try to fit multilevel model.
+
+I also fit time series models for individual countries.Italy is the country with the high index of economic freedom.By the white noise sequence test I see that p-value<0.05,so this dataset is not a white noise sequence.Then I observed whether the AIC/PAIC diagram was towed or truncated, and use system fomula(auto.arima) determined appropriate ARIMA model.It shows that AR(1) model is suitable for this two dataset.
+
+```{r, include=FALSE}
+#Time series model
+#the developed country(Italy)
+Ita<-subset(eco2,(Countries=="Italy")&(Year>=2000) )
+Ita%<>%dplyr::select(c(Year,Economic.Freedom.Summary.Index))
+Economic.Freedom.Summary.Index<-ts(Ita$Economic.Freedom.Summary.Index,start=2000)
+
+for(i in 1:2)
+{print(Box.test(Economic.Freedom.Summary.Index,lag=6*1))}
+```
+
+```{r}
+par(mfrow=c(1,3))
+plot(Economic.Freedom.Summary.Index)
+acf(Economic.Freedom.Summary.Index)
+pacf(Economic.Freedom.Summary.Index)
+
+t1<-auto.arima(Economic.Freedom.Summary.Index)
+
+#fit appropriate time series model
+fit3<-arima(Ita$Economic.Freedom.Summary.Index,order=c(1,0,0))
+```
+
+Algeria is the country with the low index of economic freedom.By the white noise sequence test I see that p-value<0.05,so this dataset is not a white noise sequence.Then I observed whether the AIC/PAIC diagram was towed or truncated, and use system fomula(auto.arima) determined appropriate ARIMA model.It shows that AR(1) model is suitable for this dataset.
+
+```{r,include=FALSE}
+#the developing country(Algeria)
+alg<-subset(eco2,(Countries=="Algeria")&(Year>=2000) )
+alg%<>%dplyr::select(c(Year,Economic.Freedom.Summary.Index))
+Economic.Freedom.Summary.Index<-ts(alg$Economic.Freedom.Summary.Index,start=2000)
+
+for(i in 1:2)
+{print(Box.test(Economic.Freedom.Summary.Index,lag=6*1))}
+```
+
+```{r}
+
+par(mfrow=c(1,3))
+plot(Economic.Freedom.Summary.Index)
+
+acf(Economic.Freedom.Summary.Index)
+pacf(Economic.Freedom.Summary.Index)
+
+t2<-auto.arima(Economic.Freedom.Summary.Index)
+
+#fit appropriate time series model
+fit4<-arima(alg$Economic.Freedom.Summary.Index,order=c(1,0,0))
+```
+
+### 2 Model Validation
+Draw residual plot and QQ plot of linear regression model and multilevel model.As I suspected,The residual plot of linear regression model looks bad(the range of residuals is too large). And R^2of this model is very low.As for multilevel regression model,the coefficient is very small.And as we said before,changes in the index of economic freedom do not show particular trends, so I think that multilevel regression is not a good choice,either.
+```{r}
+par(mfrow=c(1,2))
+plot(fit2,which=1)
+plot(fit2,which=2)
+
+
+plot(fit5,which=1)
+```
+
+The test method of time series model is to test whether the residual is white noise series.If the residual is a white noise sequence, it means the model does not omit useful information, so the model is appropriate.
+By checking the two time series models,I found that all the p-values are larger than 0.05,it means that I cannot reject the null hypothesis(the residuals are listed as white noise sequences).So the model is significantly effective.
+
+```{r,include=FALSE}
+#Italy
+#model check
+for(i in 1:2)
+{print(Box.test(fit3$residual,lag=6*i))}
+
+#Algeria
+#model check
+for(i in 1:2)
+{print(Box.test(fit4$residual,lag=6*i))}
+```
+
+### 3 Prediction
+The fitted model is used to predict the economic freedom index of these two countries(Italy&Algeria) in the next five years:
+```{r}
+#Forecast the economic index of two countries in the next five years
+#Italy
+par(mfrow=c(1,2))
+ita.fore<-forecast(fit3,h=5)
+ita.fore
+plot(ita.fore)
+
+#Algeria
+alg.fore<-forecast(fit4,h=5)
+alg.fore
+plot(alg.fore)
+```
+
+## 5.2 Factors that can affect economic freedom
+### 1 Fit models
+In this part,I divided the data set into two parts: the training set and the test set(80 percent and 20 percent, respectively).By observing the data, I think this data set is suitable for fitting with a linear model.
+```{r}
+set.seed(1234)
+nn=0.8
+data=eco
+sub<-sample(1:nrow(data),round(nrow(data)*nn))
+train<-eco[sub,]
+test<-eco[-sub,]
+
+fit.1<-lm(Economic.Freedom.Summary.Index~Higher.Education+Basic.research+population+gdp+CPI,data=train)
+```
+
+### 2 Model Validation
+The R^2 of this model is ok and p-value is much smaller than 0.05.All the independent variables are significant except Basic research(which is 0.23,I think it is acceptable).
+I use cross validation,residual plot and QQ plot to validate this model.By cross validation I get the value of RMSE=0.46 and MAE=0.38.Residual plot looks ok and qq plot looks ok too.
+
+```{r}
+#cross validation
+pred<-fit.1%>%predict(test)
+R<- data.frame(RMSE=RMSE(pred,test$Economic.Freedom.Summary.Index),MAE=MAE(pred,test$Economic.Freedom.Summary.Index))
+
+par(mfrow=c(1,2))
+#residual plot
+plot(fit.1,which=1)
+#QQ plot
+plot(fit.1,which=2)
+
+```
+
+# 6 Discussion
+
+   According to all the EDA and model above, we can conclude that,with the change of year, the change of economic freedom index is not monotonically increasing or decreasing(for one country).Linear regression model and multilevel model cannot explain the change in the data very well.Time series model can explain the data much better and I predict the future direction of economic freedom index.As for factors that affect countries' economy index,I think the GDP,CPI,population,higher education and research funding can affect counties' economic freedom.
+ 
+  
+# 7 Reference
+https://www.google.com/search?source=hp&ei=fwPRX67fO4ODr7wP_a2S6A8&q=the+factors+that+affect+countires%27+economy&oq=the+factors+that+affect+countires%27+economy&gs_lcp=CgZwc3ktYWIQAzoICAAQsQMQgwE6AggAOgUIABCxAzoOCAAQsQMQgwEQsQMQgwE6EAgAELEDEIMBELEDEIMBEAw6CggAELEDELEDEAw6BggAEAwQCjoECAAQDToECAAQHjoGCAAQCBAeOgcIIRAKEKABOggIABAIEA0QHjoFCCEQoAFQx5kIWLyAFGCIhhRoBnAAeAGAAbgMiAHSxgGSAQ8zLTE1LjIzLjguMy4xLjGYAQCgAQGqAQdnd3Mtd2l6sAEA&sclient=psy-ab&ved=0ahUKEwjump7dsMHtAhWDwYsBHf2WBP0Q4dUDCAY&uact=5
+
+时间序列分析——基于R(Time series analysis--R)  中国人民大学出版社（China Renmin University Press）
+
+https://www.google.com/search?source=hp&ei=_-7NX5-HF8H4hwOBpIrIBQ&q=time+series+model&oq=time+series+model&gs_lcp=CgZwc3ktYWIQAzICCAAyAggAMgIIADICCAAyAggAMgIIADICCAAyAggAMgIIADICCAA6BAgAEAxQ8iRY2Gdgn2loAXAAeACAAdMBiAGrBZIBBTAuNC4xmAEAoAEBqgEHZ3dzLXdperABAA&sclient=psy-ab&ved=0ahUKEwjfgsHgwLvtAhVB_GEKHQGSAlkQ4dUDCAY&uact=5
+
+
+
+
+# Appendix
+
+### model1:lm(Economic.Freedom.Summary.Index~factor(Year),data=eco2)
+```{r}
+summary(fit2)
+```
+
+### model2:lmer(Economic.Freedom.Summary.Index~Year+(1|Countries),data=eco3)
+```{r}
+summary(fit5)
+```
+
+### model3:arima(Ita$Economic.Freedom.Summary.Index,order=c(1,0,0))
+```{r}
+summary(fit3)
+```
+
+### model4:arima(alg$Economic.Freedom.Summary.Index,order=c(1,0,0))
+```{r}
+summary(fit4)
+```
+
+### model5:lm(Economic.Freedom.Summary.Index~Higher.Education+Basic.research+population+gdp+CPI,data=train)
+```{r}
+summary(fit.1)
+```
+
